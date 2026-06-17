@@ -1,0 +1,11 @@
+node_modules/
+*.log
+npm-debug.log*
+.env
+*.swp
+*.swo
+.DS_Store
+fulltest.js
+test.js
+test-v2.js
+server-cloud.js

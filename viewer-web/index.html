@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Phone Monitor - 查看端 v2.9.1</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing: border-box; }
+  body { font-family: -apple-system, sans-serif; background: #0a0a0a; color: #e0e0e0; height: 100dvh; overflow: hidden; }
+  .screen { display: none; width: 100%; height: 100%; flex-direction: column; align-items: center; justify-content: center; padding: 20px; overflow-y: auto; }
+  .screen.active { display: flex; }
+  .lock-icon { font-size: 64px; margin-bottom: 16px; }
+  .title { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
+  .subtitle { font-size: 14px; color: #888; margin-bottom: 16px; text-align: center; }
+  #qr-reader { width: 100%; max-width: 300px; border-radius: 12px; overflow: hidden; margin-bottom: 12px; }
+  #qr-reader video { width: 100%; height: auto; border-radius: 12px; }
+  .or-divider { color: #555; font-size: 13px; margin: 8px 0; }
+  .input-group { width: 100%; max-width: 280px; display: flex; gap: 8px; margin-bottom: 8px; }
+  .input-group input { flex: 1; padding: 12px; border: 1px solid #333; border-radius: 8px; background: #1a1a1a; color: #fff; font-size: 14px; text-align: center; }
+  .input-group.pwd { margin-bottom: 12px; }
+  .input-group.pwd input { letter-spacing: 4px; font-size: 16px; }
+  .btn { padding: 14px; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+  .btn:active { opacity: 0.8; }
+  .btn-primary { background: #4a6cf7; color: #fff; width: 100%; max-width: 280px; }
+  .btn-primary:disabled { background: #333; color: #666; }
+  .btn-secondary { background: #333; color: #aaa; font-size: 14px; }
+  .btn-danger { background: #8b0000; color: #fff; font-size: 14px; }
+  .error { color: #f44; font-size: 13px; margin-top: 8px; min-height: 20px; text-align: center; }
+  /* 监控画面 */
+  .video-container { width: 100%; flex: 1; display: flex; align-items: center; justify-content: center; background: #000; position: relative; overflow: hidden; }
+  .video-container img { width: 100%; height: 100%; object-fit: contain; }
+  .video-container canvas { position: absolute; top:0; left:0; width:100%; height:100%; object-fit: contain; }
+  .video-container.fullscreen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 9999; }
+  .status-bar { width: 100%; padding: 8px 16px; background: rgba(0,0,0,0.8); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #4caf50; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .status-text { font-size: 12px; color: #aaa; }
+  .fps { font-size: 11px; color: #888; }
+  .bottom-bar { width: 100%; padding: 8px 12px; background: rgba(0,0,0,0.8); display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; }
+  .bottom-bar .btn { padding: 8px 10px; font-size: 12px; border-radius: 6px; }
+  .no-image-hint { position: absolute; color: #555; font-size: 14px; text-align: center; padding: 20px; }
+  /* ★ 语音对讲按钮 */
+  .btn-talk { background: #c2410c; color: #fff; flex: 1; min-width: 80px; font-size: 14px; padding: 12px 8px; user-select: none; -webkit-user-select: none; }
+  .btn-talk.recording { background: #dc2626; animation: talkPulse 0.8s infinite; }
+  @keyframes talkPulse { 0%,100%{opacity:1;} 50%{opacity:0.7;} }
+  .talk-status { font-size: 11px; color: #888; text-align: center; padding: 2px 0; flex-shrink: 0; }
+  /* 聊天面板 */
+  .chat-panel { width: 100%; max-height: 180px; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; flex-shrink: 0; border-top: 1px solid #333; }
+  .chat-messages { flex: 1; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 4px; min-height: 60px; max-height: 120px; }
+  .chat-msg { font-size: 12px; padding: 4px 8px; border-radius: 8px; max-width: 80%; word-break: break-word; }
+  .chat-msg.mine { align-self: flex-end; background: #4a6cf7; color: #fff; }
+  .chat-msg.other { align-self: flex-start; background: #333; color: #ddd; }
+  .chat-msg .time { font-size: 9px; color: rgba(255,255,255,0.5); display: block; margin-top: 2px; }
+  .chat-input-row { display: flex; padding: 6px 8px; gap: 6px; }
+  .chat-input-row input { flex: 1; padding: 8px 10px; border: 1px solid #444; border-radius: 16px; background: #1a1a1a; color: #fff; font-size: 13px; }
+  .chat-input-row button { padding: 6px 12px; border: none; border-radius: 16px; background: #4a6cf7; color: #fff; font-size: 13px; cursor: pointer; }
+  .btn-fullscreen { background: #2d6a4f; color: #fff; }
+  .btn-chat-toggle { background: #444466; color: #fff; }
+</style>
+</head>
+<body>
+
+<!-- 扫码 + 密码输入屏 -->
+<div id="password-screen" class="screen active">
+  <div class="lock-icon">🔒</div>
+  <div class="title">Phone Monitor</div>
+  <div class="subtitle" id="device-label">正在加载...</div>
+  <div id="qr-reader"></div>
+  <button class="btn btn-primary" id="native-scan-btn" onclick="startNativeScan()" style="display:none; background:#2d6a4f; margin-bottom:8px;">📷 打开摄像头扫码</button>
+  <div class="or-divider">—— 或手动输入 ——</div>
+  <div class="input-group">
+    <input type="text" id="device-id-input" placeholder="设备ID" maxlength="20">
+  </div>
+  <div class="input-group pwd">
+    <input type="password" id="password-input" placeholder="监控密码" maxlength="20" autocomplete="current-password">
+  </div>
+  <button class="btn btn-primary" id="connect-btn" onclick="doConnect()">连接监控</button>
+  <button class="btn btn-secondary" id="stop-scan-btn" onclick="stopScan()" style="display:none;">关闭扫码</button>
+  <button class="btn btn-secondary" id="rescan-btn" onclick="clearDeviceAndRescan()" style="display:none;">切换设备</button>
+  <div class="error" id="error-msg"></div>
+  <div style="margin-top: 12px; color: #444466; font-size: 11px;">v2.9.1</div>
+</div>
+
+<!-- 监控画面屏 -->
+<div id="monitor-screen" class="screen" style="padding:0; justify-content:flex-start;">
+  <div class="status-bar">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div class="status-dot" id="status-dot"></div>
+      <span class="status-text" id="status-text">实时监控中</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span class="fps" id="fps-display">-- FPS</span>
+      <span style="font-size:11px;color:#666;" id="mode-label"></span>
+    </div>
+  </div>
+  <div class="video-container" id="video-container" ondblclick="toggleFullscreen()">
+    <img id="monitor-image" src="" alt="" style="display:none;">
+    <canvas id="night-canvas" style="display:none;"></canvas>
+    <div class="no-image-hint" id="no-image-hint">⏳ 等待采集端上传画面...<br><small style="color:#444;margin-top:8px;display:block;">确保采集端已启动监控</small></div>
+  </div>
+  <!-- ★ 语音对讲按钮区 -->
+  <div class="talk-status" id="talk-status">🎤 按住下方按钮开始对讲</div>
+  <div style="width:100%;padding:4px 12px;display:flex;gap:8px;flex-shrink:0;">
+    <button class="btn btn-talk" id="talk-btn"
+      ontouchstart="startTalk(event)" ontouchend="stopTalk(event)" ontouchcancel="stopTalk(event)"
+      onmousedown="startTalk(event)" onmouseup="stopTalk(event)" onmouseleave="stopTalk(event)">🎤 按住说话</button>
+  </div>
+  <!-- 聊天面板 -->
+  <div class="chat-panel" id="chat-panel" style="display:none;">
+    <div class="chat-messages" id="chat-messages"></div>
+    <div class="chat-input-row">
+      <input type="text" id="chat-input" placeholder="输入消息..." maxlength="200" onkeydown="if(event.key==='Enter')sendChat()">
+      <button onclick="sendChat()">发送</button>
+    </div>
+  </div>
+  <div class="bottom-bar">
+    <button class="btn btn-secondary" onclick="toggleChat()">💬 对话</button>
+    <button class="btn btn-fullscreen" onclick="toggleFullscreen()">⛶ 全屏</button>
+    <button class="btn btn-secondary" onclick="toggleNightEnhance()">🌙 夜视增强</button>
+    <button class="btn btn-secondary" onclick="disconnect()">断开</button>
+    <button class="btn btn-danger" onclick="logout()">退出</button>
+  </div>
+</div>
+
+<script>
+// ========== 初始化 ==========
+let currentDeviceId = '';
+let currentToken = '';
+let currentPassword = '';
+let serverUrl = location.origin;
+let nightEnhance = false;
+
+// ★ 统一存储
+const storage = {
+  save: function(deviceId, token, password, srvUrl) {
+    const data = JSON.stringify({ deviceId, token, password, serverUrl: srvUrl });
+    try { localStorage.setItem('phonemonitor_last_device', data); } catch(e) {}
+    try { if (window.AndroidStorage) AndroidStorage.saveDevice(data); } catch(e) {}
+  },
+  load: function() {
+    try {
+      if (window.AndroidStorage) {
+        const raw = AndroidStorage.getSavedDevice();
+        if (raw && raw.length > 0) return JSON.parse(raw);
+      }
+    } catch(e) {}
+    try {
+      const raw = localStorage.getItem('phonemonitor_last_device');
+      if (raw) return JSON.parse(raw);
+    } catch(e) {}
+    return null;
+  },
+  clear: function() {
+    try { localStorage.removeItem('phonemonitor_last_device'); } catch(e) {}
+    try { if (window.AndroidStorage) AndroidStorage.clearDevice(); } catch(e) {}
+  }
+};
+
+// ★ Android 原生注入回调（被 Android MainActivity 调用）
+window.onAndroidDeviceReady = function(jsonStr) {
+  try {
+    const saved = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
+    if (saved && saved.deviceId) {
+      applySavedDevice(saved);
+    } else {
+      document.getElementById('device-label').textContent = '请扫码或手动输入';
+      startQrScanner();
+    }
+  } catch(e) {
+    document.getElementById('device-label').textContent = '请扫码或手动输入';
+    startQrScanner();
+  }
+};
+
+// ★ 统一应用已保存的设备信息
+function applySavedDevice(saved) {
+  currentDeviceId = saved.deviceId;
+  currentToken = saved.token || '';
+  currentPassword = saved.password || '';
+  if (saved.serverUrl && saved.serverUrl.length > 5) {
+    serverUrl = saved.serverUrl.startsWith('http') ? saved.serverUrl : 'https://' + saved.serverUrl;
+  }
+  document.getElementById('device-id-input').value = saved.deviceId;
+  document.getElementById('password-input').value = currentPassword || (currentToken ? '【扫码验证】' : '');
+  document.getElementById('device-label').textContent = '已记住设备: ' + saved.deviceId;
+  document.getElementById('rescan-btn').style.display = 'block';
+  document.getElementById('error-msg').textContent = '⏳ 自动登录中...';
+  setTimeout(() => doConnectWithSaved(), 800);
+}
+
+// ★ 页面 DOMContentLoaded 后主动读取存储（不依赖 Android 注入时机）
+document.addEventListener('DOMContentLoaded', function() {
+  // 延迟500ms确保 AndroidStorage JS接口已注入
+  setTimeout(function() {
+    // 如果 Android 已经注入了数据（window.__savedDevice），直接用
+    if (window.__savedDevice && window.__savedDevice.deviceId) {
+      applySavedDevice(window.__savedDevice);
+      return;
+    }
+    // 否则主动从 AndroidStorage 读取
+    const saved = storage.load();
+    if (saved && saved.deviceId) {
+      applySavedDevice(saved);
+    } else {
+      document.getElementById('device-label').textContent = '请扫码或手动输入';
+      startQrScanner();
+    }
+  }, 500);
+});
+
+// ========== 自动重连 ==========
+function doConnectWithSaved() {
+  const errorEl = document.getElementById('error-msg');
+  if (currentToken) { doConnectWithToken(currentToken); return; }
+  if (currentPassword) { doConnectWithPassword(currentPassword); return; }
+  errorEl.textContent = '请输入监控密码';
+  document.getElementById('password-input').value = '';
+  document.getElementById('password-input').focus();
+}
+
+async function doConnectWithToken(token) {
+  const errorEl = document.getElementById('error-msg');
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const resp = await fetch(`${serverUrl}/api/verify?deviceId=${encodeURIComponent(currentDeviceId)}&token=${encodeURIComponent(token)}`);
+      const text = await resp.text();
+      let data;
+      try { data = JSON.parse(text); }
+      catch (parseErr) {
+        if (attempt < 4) { errorEl.textContent = '服务器唤醒中，重试 ' + (attempt + 2) + '/5...'; await sleep(3000); continue; }
+        errorEl.textContent = '服务器暂时不可用，请稍后重试'; return;
+      }
+      if (data.ok) { enterMonitorScreen(); return; }
+      if (currentPassword) { doConnectWithPassword(currentPassword); return; }
+      errorEl.textContent = data.error || '验证失败，请重新扫码';
+      return;
+    } catch (e) {
+      if (attempt < 4) { errorEl.textContent = '连接中，重试 ' + (attempt + 2) + '/5...'; await sleep(3000); }
+      else { errorEl.textContent = '连接超时，请检查网络'; }
+    }
+  }
+}
+
+async function doConnectWithPassword(password) {
+  const errorEl = document.getElementById('error-msg');
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const resp = await fetch(`${serverUrl}/api/verify?deviceId=${encodeURIComponent(currentDeviceId)}&password=${encodeURIComponent(password)}`);
+      const text = await resp.text();
+      let data;
+      try { data = JSON.parse(text); }
+      catch (parseErr) {
+        if (attempt < 4) { errorEl.textContent = '服务器唤醒中，重试 ' + (attempt + 2) + '/5...'; await sleep(3000); continue; }
+        errorEl.textContent = '服务器暂时不可用，请稍后重试'; return;
+      }
+      if (data.ok) { currentToken = data.token || ''; enterMonitorScreen(); return; }
+      errorEl.textContent = data.error || '密码错误';
+      return;
+    } catch (e) {
+      if (attempt < 4) { errorEl.textContent = '服务器唤醒中，重试 ' + (attempt + 2) + '/5...'; await sleep(3000); }
+      else { errorEl.textContent = '网络错误: ' + e.message; }
+    }
+  }
+}
+
+function enterMonitorScreen() {
+  document.getElementById('password-screen').classList.remove('active');
+  document.getElementById('monitor-screen').classList.add('active');
+  document.getElementById('status-dot').style.background = '#4caf50';
+  document.getElementById('status-text').textContent = '实时监控中';
+  startPolling();
+  startChatPolling();
+  startAudioPolling();
+}
+
+// ========== 二维码扫描 ==========
+let html5QrCode = null;
+
+function startQrScanner() {
+  if (window.NativeScan) {
+    document.getElementById('native-scan-btn').style.display = 'block';
+    document.getElementById('device-label').textContent = '点击下方按钮扫码';
+    return;
+  }
+  if (html5QrCode) return;
+  html5QrCode = new Html5Qrcode("qr-reader");
+  html5QrCode.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: { width: 250, height: 250 } },
+    onScanSuccess,
+    () => {}
+  ).then(() => {
+    document.getElementById('stop-scan-btn').style.display = 'block';
+    document.getElementById('device-label').textContent = '正在扫描二维码...';
+  }).catch(err => {
+    document.getElementById('device-label').textContent = '请手动输入设备ID和密码';
+    document.getElementById('stop-scan-btn').style.display = 'none';
+    if (window.NativeScan) document.getElementById('native-scan-btn').style.display = 'block';
+  });
+}
+
+function startNativeScan() {
+  try {
+    document.getElementById('device-label').textContent = '正在打开摄像头...';
+    NativeScan.startScan();
+  } catch(e) {
+    document.getElementById('error-msg').textContent = '原生扫码不可用';
+  }
+}
+
+window.__onNativeScan = function(scanResult) {
+  document.getElementById('device-label').textContent = '扫码成功 ✅';
+  onScanSuccess(scanResult);
+};
+
+function stopScan() {
+  if (html5QrCode) {
+    html5QrCode.stop().then(() => { html5QrCode = null; document.getElementById('stop-scan-btn').style.display = 'none'; }).catch(() => {});
+  }
+}
+
+function onScanSuccess(decodedText) {
+  let deviceId = '';
+  let token = '';
+  try {
+    if (decodedText.startsWith('phonemonitor://')) {
+      const url = new URL(decodedText);
+      deviceId = url.searchParams.get('deviceId') || '';
+      token = url.searchParams.get('token') || '';
+      const qrServer = url.searchParams.get('server') || '';
+      if (qrServer) serverUrl = qrServer.includes('onrender.com') ? 'https://' + qrServer : 'https://' + qrServer;
+    } else if (/^[a-f0-9]{8}$/i.test(decodedText)) {
+      deviceId = decodedText;
+    }
+  } catch(e) {
+    if (/^[a-f0-9]{8}$/i.test(decodedText)) deviceId = decodedText;
+  }
+  if (deviceId) {
+    currentDeviceId = deviceId;
+    currentToken = token;
+    document.getElementById('device-id-input').value = deviceId;
+    document.getElementById('password-input').value = token ? '【扫码自动验证】' : '';
+    document.getElementById('device-label').textContent = '设备: ' + deviceId + (token ? ' ✅' : '');
+    stopScan();
+    if (token) { storage.save(deviceId, token, '', serverUrl); doConnectWithToken(token); }
+  }
+}
+
+// ========== 手动连接 ==========
+async function doConnect() {
+  const errorEl = document.getElementById('error-msg');
+  const deviceId = document.getElementById('device-id-input').value.trim();
+  const password = document.getElementById('password-input').value.trim();
+
+  if (!deviceId) { errorEl.textContent = '请输入设备ID'; return; }
+  if (!password || password === '【扫码自动验证】') {
+    if (currentToken && currentDeviceId === deviceId) { doConnectWithToken(currentToken); return; }
+    errorEl.textContent = '请输入监控密码'; return;
+  }
+
+  currentDeviceId = deviceId;
+  errorEl.textContent = '⏳ 连接中...';
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const resp = await fetch(`${serverUrl}/api/verify?deviceId=${encodeURIComponent(deviceId)}&password=${encodeURIComponent(password)}`);
+      const text = await resp.text();
+      let data;
+      try { data = JSON.parse(text); }
+      catch (parseErr) {
+        if (attempt < 4) { errorEl.textContent = '服务器唤醒中，重试 ' + (attempt + 2) + '/5...'; await sleep(3000); continue; }
+        errorEl.textContent = '服务器暂时不可用，请稍后重试'; return;
+      }
+      if (!data.ok) { errorEl.textContent = data.error || '验证失败'; return; }
+      currentToken = data.token || '';
+      currentPassword = password;
+      storage.save(deviceId, currentToken, password, serverUrl);
+      enterMonitorScreen();
+      return;
+    } catch (e) {
+      if (attempt < 4) { errorEl.textContent = '服务器唤醒中，重试 ' + (attempt + 2) + '/5...'; await sleep(3000); }
+      else { errorEl.textContent = '网络错误: ' + e.message; }
+    }
+  }
+}
+
+function clearDeviceAndRescan() {
+  currentDeviceId = ''; currentToken = ''; currentPassword = '';
+  document.getElementById('device-id-input').value = '';
+  document.getElementById('password-input').value = '';
+  document.getElementById('device-label').textContent = '请扫描采集端二维码';
+  document.getElementById('rescan-btn').style.display = 'none';
+  document.getElementById('error-msg').textContent = '';
+  document.getElementById('qr-reader').style.display = 'block';
+  document.getElementById('native-scan-btn').style.display = 'none';
+  startQrScanner();
+}
+
+// ========== 监控轮询 ==========
+let pollTimer = null;
+let fpsTimer = null;
+let frameCount = 0;
+let noImageCount = 0;
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  if (fpsTimer) clearInterval(fpsTimer);
+  frameCount = 0; noImageCount = 0;
+  fpsTimer = setInterval(() => {
+    document.getElementById('fps-display').textContent = frameCount + ' FPS';
+    frameCount = 0;
+  }, 1000);
+  pollTimer = setInterval(() => { pollFrame(); }, 500);
+  pollFrame();
+}
+
+async function pollFrame() {
+  if (!currentDeviceId) return;
+  try {
+    const resp = await fetch(`${serverUrl}/api/latest-image?deviceId=${encodeURIComponent(currentDeviceId)}&t=${Date.now()}`);
+    if (!resp.ok) { noImageCount++; updateStatusNoImage(); return; }
+    const data = await resp.json();
+    if (data.ok && data.image) {
+      const img = document.getElementById('monitor-image');
+      const canvas = document.getElementById('night-canvas');
+      const hint = document.getElementById('no-image-hint');
+
+      if (nightEnhance) {
+        img.style.display = 'none';
+        canvas.style.display = 'block';
+        applyNightEnhance(data.image, canvas);
+      } else {
+        canvas.style.display = 'none';
+        img.src = 'data:image/jpeg;base64,' + data.image;
+        img.style.display = 'block';
+      }
+      hint.style.display = 'none';
+      frameCount++; noImageCount = 0;
+      document.getElementById('status-dot').style.background = '#4caf50';
+      document.getElementById('status-text').textContent = nightEnhance ? '夜视增强中' : '实时监控中';
+      document.getElementById('mode-label').textContent = nightEnhance ? '🌙' : '';
+    } else {
+      noImageCount++; updateStatusNoImage();
+    }
+  } catch(e) { noImageCount++; updateStatusNoImage(); }
+}
+
+function updateStatusNoImage() {
+  if (noImageCount > 6) {
+    document.getElementById('status-dot').style.background = '#f44';
+    document.getElementById('status-text').textContent = '等待画面...';
+    document.getElementById('no-image-hint').style.display = 'block';
+  }
+}
+
+function applyNightEnhance(base64, canvas) {
+  const img = new Image();
+  img.onload = function() {
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext('2d');
+    ctx.filter = 'brightness(2.5) contrast(1.3) grayscale(0.5)';
+    ctx.drawImage(img, 0, 0);
+    ctx.filter = 'none';
+  };
+  img.src = 'data:image/jpeg;base64,' + base64;
+}
+
+function toggleNightEnhance() {
+  nightEnhance = !nightEnhance;
+  const canvas = document.getElementById('night-canvas');
+  const img = document.getElementById('monitor-image');
+  if (!nightEnhance) {
+    canvas.style.display = 'none';
+    img.style.display = 'block';
+  }
+  document.getElementById('status-text').textContent = nightEnhance ? '夜视增强中' : '实时监控中';
+  document.getElementById('mode-label').textContent = nightEnhance ? '🌙' : '';
+}
+
+// ★ ========== 全屏 ==========
+let isFullscreen = false;
+
+function toggleFullscreen() {
+  const vc = document.getElementById('video-container');
+  if (!isFullscreen) {
+    if (vc.requestFullscreen) {
+      vc.requestFullscreen().catch(() => enterManualFullscreen(vc));
+    } else if (vc.webkitRequestFullscreen) {
+      vc.webkitRequestFullscreen();
+    } else {
+      enterManualFullscreen(vc);
+    }
+  } else {
+    exitFullscreen();
+  }
+}
+
+function enterManualFullscreen(vc) {
+  vc.classList.add('fullscreen');
+  isFullscreen = true;
+  document.querySelector('.status-bar').style.display = 'none';
+  document.querySelector('.bottom-bar').style.display = 'none';
+  document.getElementById('chat-panel').style.display = 'none';
+  vc.ondblclick = function() { exitFullscreen(); };
+}
+
+function exitFullscreen() {
+  const vc = document.getElementById('video-container');
+  vc.classList.remove('fullscreen');
+  isFullscreen = false;
+  document.querySelector('.status-bar').style.display = '';
+  document.querySelector('.bottom-bar').style.display = '';
+  vc.ondblclick = function() { toggleFullscreen(); };
+  if (document.fullscreenElement) document.exitFullscreen();
+}
+
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement) {
+    document.getElementById('video-container').classList.remove('fullscreen');
+    isFullscreen = false;
+    document.querySelector('.status-bar').style.display = '';
+    document.querySelector('.bottom-bar').style.display = '';
+  }
+});
+
+// ★ ========== 语音对讲（PCM 录音 + 播放）==========
+let audioContext = null;
+let audioPollTimer = null;
+let lastAudioTime = 0;
+let scriptProcessor = null;
+let pcmBuffers = [];  // 录音缓冲
+let isTalkRecording = false;
+let talkStream = null;
+
+function initAudioContext() {
+  if (!audioContext) {
+    try {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    } catch(e) {
+      console.error('AudioContext 初始化失败:', e);
+    }
+  }
+  if (audioContext && audioContext.state === 'suspended') {
+    audioContext.resume();
+  }
+}
+
+// ★ 按住说话：PCM 录音
+async function startTalk(e) {
+  e.preventDefault();
+  if (isTalkRecording) return;
+  initAudioContext();
+
+  try {
+    talkStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+    const source = audioContext.createMediaStreamSource(talkStream);
+    const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+    pcmBuffers = [];
+    isTalkRecording = true;
+
+    processor.onaudioprocess = (ev) => {
+      if (!isTalkRecording) return;
+      const inputData = ev.inputBuffer.getChannelData(0);
+      // Float32 → Int16 PCM
+      const pcm = new Int16Array(inputData.length);
+      for (let i = 0; i < inputData.length; i++) {
+        pcm[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
+      }
+      pcmBuffers.push(pcm);
+    };
+
+    source.connect(processor);
+    processor.connect(audioContext.destination); // 必须连接才能触发 onaudioprocess
+    scriptProcessor = { source, processor };
+
+    document.getElementById('talk-btn').classList.add('recording');
+    document.getElementById('talk-btn').textContent = '🔴 松开发送';
+    document.getElementById('talk-status').textContent = '🎙️ 正在录音...';
+  } catch(e) {
+    console.error('录音失败:', e);
+    document.getElementById('talk-status').textContent = '❌ 录音权限未开启';
+  }
+}
+
+async function stopTalk(e) {
+  e.preventDefault();
+  if (!isTalkRecording) return;
+  isTalkRecording = false;
+
+  // 停止录音
+  if (scriptProcessor) {
+    try { scriptProcessor.processor.disconnect(); } catch(e) {}
+    try { scriptProcessor.source.disconnect(); } catch(e) {}
+    scriptProcessor = null;
+  }
+  if (talkStream) {
+    talkStream.getTracks().forEach(t => t.stop());
+    talkStream = null;
+  }
+
+  document.getElementById('talk-btn').classList.remove('recording');
+  document.getElementById('talk-btn').textContent = '🎤 按住说话';
+  document.getElementById('talk-status').textContent = '📤 发送中...';
+
+  // 合并 PCM 缓冲并上传
+  if (pcmBuffers.length > 0) {
+    const totalLen = pcmBuffers.reduce((s, b) => s + b.length, 0);
+    const merged = new Int16Array(totalLen);
+    let offset = 0;
+    for (const buf of pcmBuffers) {
+      merged.set(buf, offset);
+      offset += buf.length;
+    }
+
+    // Int16Array → Base64
+    const bytes = new Uint8Array(merged.buffer);
+    const base64 = btoa(String.fromCharCode(...bytes));
+    uploadTalkAudio(base64);
+  } else {
+    document.getElementById('talk-status').textContent = '🎤 按住下方按钮开始对讲';
+  }
+}
+
+async function uploadTalkAudio(audioBase64) {
+  if (!currentDeviceId || !audioBase64) {
+    document.getElementById('talk-status').textContent = '🎤 按住下方按钮开始对讲';
+    return;
+  }
+  try {
+    await fetch(`${serverUrl}/api/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        deviceId: currentDeviceId,
+        password: currentPassword,
+        audio: audioBase64,
+        sampleRate: 16000,
+        from: 'viewer'
+      })
+    });
+    document.getElementById('talk-status').textContent = '✅ 已发送';
+    setTimeout(() => {
+      if (!isTalkRecording) {
+        document.getElementById('talk-status').textContent = '🎤 按住下方按钮开始对讲';
+      }
+    }, 1500);
+  } catch(e) {
+    document.getElementById('talk-status').textContent = '❌ 发送失败';
+  }
+}
+
+// ★ 轮询采集端音频并播放
+function startAudioPolling() {
+  if (audioPollTimer) clearInterval(audioPollTimer);
+  lastAudioTime = 0;
+  audioPollTimer = setInterval(() => { pollAudio(); }, 800);
+  pollAudio();
+}
+
+async function pollAudio() {
+  if (!currentDeviceId) return;
+  try {
+    const resp = await fetch(`${serverUrl}/api/latest-audio?deviceId=${encodeURIComponent(currentDeviceId)}&from=collector`);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data.ok && data.audio) {
+      if (data.time && data.time <= lastAudioTime) return;
+      lastAudioTime = data.time || Date.now();
+      playPcmAudio(data.audio);
+    }
+  } catch(e) {}
+}
+
+function playPcmAudio(audioBase64) {
+  initAudioContext();
+  if (!audioContext) return;
+
+  try {
+    const binaryStr = atob(audioBase64);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    const pcmData = new Int16Array(bytes.buffer);
+
+    const buffer = audioContext.createBuffer(1, pcmData.length, 16000);
+    const channelData = buffer.getChannelData(0);
+    for (let i = 0; i < pcmData.length; i++) {
+      channelData[i] = pcmData[i] / 0x7FFF;
+    }
+
+    const source = audioContext.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioContext.destination);
+    source.start(0);
+    document.getElementById('talk-status').textContent = '🔊 正在播放...';
+    source.onended = () => {
+      if (!isTalkRecording) {
+        document.getElementById('talk-status').textContent = '🎤 按住下方按钮开始对讲';
+      }
+    };
+  } catch(e) {
+    console.error('播放音频失败:', e);
+  }
+}
+
+// ★ ========== 对话 ==========
+let chatVisible = false;
+let lastChatTime = 0;
+let chatPollTimer = null;
+
+function toggleChat() {
+  chatVisible = !chatVisible;
+  document.getElementById('chat-panel').style.display = chatVisible ? 'flex' : 'none';
+  if (chatVisible) document.getElementById('chat-input').focus();
+}
+
+function startChatPolling() {
+  if (chatPollTimer) clearInterval(chatPollTimer);
+  lastChatTime = Date.now();
+  chatPollTimer = setInterval(() => { pollChatMessages(); }, 2000);
+  pollChatMessages();
+}
+
+async function pollChatMessages() {
+  if (!currentDeviceId) return;
+  try {
+    const resp = await fetch(`${serverUrl}/api/chat/messages?deviceId=${encodeURIComponent(currentDeviceId)}&since=${lastChatTime}`);
+    const data = await resp.json();
+    if (data.ok && data.messages && data.messages.length > 0) {
+      data.messages.forEach(m => {
+        addChatBubble(m.from === 'viewer' ? 'mine' : 'other', m.text, m.time);
+      });
+    }
+    if (data.lastTime) lastChatTime = data.lastTime;
+  } catch(e) {}
+}
+
+function addChatBubble(cls, text, time) {
+  const container = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + cls;
+  const timeStr = new Date(time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  div.innerHTML = text + '<span class="time">' + timeStr + '</span>';
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text || !currentDeviceId) return;
+
+  addChatBubble('mine', text, Date.now());
+  input.value = '';
+
+  try {
+    await fetch(`${serverUrl}/api/chat/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId: currentDeviceId, password: currentPassword, from: 'viewer', text })
+    });
+  } catch(e) {}
+}
+
+// ★ 断开连接
+function disconnect() {
+  stopPollingTimers();
+  stopChatPolling();
+  stopAudioPolling();
+  document.getElementById('monitor-image').src = '';
+  document.getElementById('monitor-image').style.display = 'none';
+  document.getElementById('night-canvas').style.display = 'none';
+  document.getElementById('no-image-hint').style.display = 'block';
+  document.getElementById('monitor-screen').classList.remove('active');
+  document.getElementById('password-screen').classList.add('active');
+  document.getElementById('error-msg').textContent = '';
+  nightEnhance = false;
+  chatVisible = false;
+  document.getElementById('chat-panel').style.display = 'none';
+}
+
+// ★ 退出登录
+function logout() {
+  stopPollingTimers();
+  stopChatPolling();
+  stopAudioPolling();
+  storage.clear();
+  currentDeviceId = ''; currentToken = ''; currentPassword = '';
+  document.getElementById('monitor-image').src = '';
+  document.getElementById('monitor-image').style.display = 'none';
+  document.getElementById('night-canvas').style.display = 'none';
+  document.getElementById('no-image-hint').style.display = 'block';
+  document.getElementById('monitor-screen').classList.remove('active');
+  document.getElementById('password-screen').classList.add('active');
+  document.getElementById('device-id-input').value = '';
+  document.getElementById('password-input').value = '';
+  document.getElementById('device-label').textContent = '请扫描采集端二维码';
+  document.getElementById('rescan-btn').style.display = 'none';
+  document.getElementById('error-msg').textContent = '已退出登录';
+  nightEnhance = false;
+  chatVisible = false;
+  document.getElementById('chat-panel').style.display = 'none';
+  startQrScanner();
+}
+
+function stopPollingTimers() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  if (fpsTimer) { clearInterval(fpsTimer); fpsTimer = null; }
+}
+
+function stopChatPolling() {
+  if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
+}
+
+function stopAudioPolling() {
+  if (audioPollTimer) { clearInterval(audioPollTimer); audioPollTimer = null; }
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ========== 启动入口 ==========
+// ★ 注意：初始化逻辑在上方 DOMContentLoaded 里，由 storage.load() 主动读取
+// 这里仅做键盘事件绑定
+
+document.getElementById('password-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') doConnect(); });
+document.getElementById('device-id-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('password-input').focus(); });
+
+window.addEventListener('beforeunload', () => {
+  stopPollingTimers();
+  stopChatPolling();
+  stopAudioPolling();
+  if (html5QrCode) html5QrCode.stop().catch(() => {});
+});
+</script>
+</body>
+</html>

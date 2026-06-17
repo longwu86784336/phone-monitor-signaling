@@ -1,0 +1,6 @@
+<!-- button_bg.xml - 按钮背景 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#185fa5" />
+    <corners android:radius="8dp" />
+</shape>

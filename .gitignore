@@ -1,0 +1,39 @@
+# Android
+*.iml
+.gradle/
+local.properties
+/.idea/
+.DS_Store/
+/build/
+/captures/
+
+# Android Studio
+*.iws
+*.ipr
+*.iml
+.idea/
+
+# Gradle
+gradle-app.setting
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Build outputs (keep APKs for archive)
+# apk-archive/ - keep
+# **/build/outputs/ - ignore intermediate build files
+**/build/intermediates/
+**/build/tmp/
+
+# Keystore
+*.jks
+*.keystore
