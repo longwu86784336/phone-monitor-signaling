@@ -19,6 +19,136 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 // 内存存储：{ deviceId: { passwordHash, lastImage, lastImageTime, lastSeen, lastAudio, lastAudioTime, viewerAudio, viewerAudioTime } }
 const devices = new Map();
 
+// ★ 激活码管理（超级管理员白名单机制）
+// 激活码格式：XXXX-XXXX-XXXX（12位，横杠分隔）
+// 每个激活码可绑定指定数量的设备（默认1个）
+const activationCodes = new Map();
+// 已激活设备：{ deviceId: { code, activatedAt, note } }
+const activatedDevices = new Map();
+
+// 生成激活码
+function generateActivationCode() {
+  const part = () => Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `${part()}-${part()}-${part()}`;
+}
+
+// 验证激活码 API
+// POST /api/verify-code
+// Body: { code, deviceId }
+app.post('/api/verify-code', (req, res) => {
+  const { code, deviceId } = req.body;
+  if (!code || !deviceId) {
+    return res.json({ ok: false, error: '缺少激活码或设备ID' });
+  }
+  const info = activationCodes.get(code);
+  if (!info) {
+    return res.json({ ok: false, error: '激活码不存在' });
+  }
+  if (info.expiredAt && Date.now() > info.expiredAt) {
+    return res.json({ ok: false, error: '激活码已过期' });
+  }
+  // 检查设备数是否已达上限
+  const boundDevices = [...activatedDevices.entries()].filter(([_, v]) => v.code === code).length;
+  if (boundDevices >= info.maxDevices) {
+    return res.json({ ok: false, error: `激活码已达设备上限（${info.maxDevices}个）` });
+  }
+  // 绑定设备
+  activatedDevices.set(deviceId, { code, activatedAt: Date.now(), note: '' });
+  console.log(`[激活] 设备 ${deviceId} 使用激活码 ${code} 激活成功`);
+  res.json({ ok: true, message: '激活成功' });
+});
+
+// 检查设备是否已激活
+// GET /api/check-device?deviceId=xxx
+app.get('/api/check-device', (req, res) => {
+  const { deviceId } = req.query;
+  if (!deviceId) return res.json({ ok: false, error: '缺少设备ID' });
+  const info = activatedDevices.get(deviceId);
+  if (!info) {
+    return res.json({ ok: false, activated: false });
+  }
+  // 检查激活码是否还有效
+  const codeInfo = activationCodes.get(info.code);
+  if (!codeInfo || (codeInfo.expiredAt && Date.now() > codeInfo.expiredAt)) {
+    return res.json({ ok: false, activated: false, reason: '激活码已失效' });
+  }
+  res.json({ ok: true, activated: true, code: info.code, activatedAt: info.activatedAt });
+});
+
+// ★ 管理 API（简单密码保护，密码：admin123456）
+// POST /api/admin/login
+app.post('/api/admin/login', (req, res) => {
+  const { password } = req.body;
+  if (password === 'admin123456') {
+    res.json({ ok: true, token: 'admin-authed' });
+  } else {
+    res.json({ ok: false, error: '管理密码错误' });
+  }
+});
+
+// GET /api/admin/codes（列出所有激活码）
+app.get('/api/admin/codes', (req, res) => {
+  const auth = req.headers['admin-token'];
+  if (auth !== 'admin-authed') return res.json({ ok: false, error: '未授权' });
+  const list = [];
+  for (const [code, info] of activationCodes.entries()) {
+    const bound = [...activatedDevices.entries()].filter(([_, v]) => v.code === code);
+    list.push({
+      code,
+      maxDevices: info.maxDevices,
+      boundDevices: bound.length,
+      boundList: bound.map(([did, v]) => ({ deviceId: did, activatedAt: v.activatedAt, note: v.note })),
+      expiredAt: info.expiredAt || 0,
+      createdAt: info.createdAt,
+      note: info.note
+    });
+  }
+  res.json({ ok: true, codes: list });
+});
+
+// POST /api/admin/code（生成新激活码）
+// Body: { maxDevices: 1, expiredAt: 0, note: '' }
+app.post('/api/admin/code', (req, res) => {
+  const auth = req.headers['admin-token'];
+  if (auth !== 'admin-authed') return res.json({ ok: false, error: '未授权' });
+  const { maxDevices, expiredAt, note } = req.body;
+  const code = generateActivationCode();
+  activationCodes.set(code, {
+    maxDevices: maxDevices || 1,
+    expiredAt: expiredAt || 0,
+    createdAt: Date.now(),
+    note: note || ''
+  });
+  console.log(`[管理] 生成新激活码: ${code} (上限${maxDevices || 1}设备)`);
+  res.json({ ok: true, code });
+});
+
+// DELETE /api/admin/code（删除/注销激活码）
+// Body: { code }
+app.delete('/api/admin/code', (req, res) => {
+  const auth = req.headers['admin-token'];
+  if (auth !== 'admin-authed') return res.json({ ok: false, error: '未授权' });
+  const { code } = req.body;
+  activationCodes.delete(code);
+  // 同时解绑使用该码的设备
+  for (const [did, info] of activatedDevices.entries()) {
+    if (info.code === code) activatedDevices.delete(did);
+  }
+  console.log(`[管理] 删除激活码: ${code}`);
+  res.json({ ok: true });
+});
+
+// DELETE /api/admin/device（解绑设备）
+// Body: { deviceId }
+app.delete('/api/admin/device', (req, res) => {
+  const auth = req.headers['admin-token'];
+  if (auth !== 'admin-authed') return res.json({ ok: false, error: '未授权' });
+  const { deviceId } = req.body;
+  activatedDevices.delete(deviceId);
+  console.log(`[管理] 解绑设备: ${deviceId}`);
+  res.json({ ok: true });
+});
+
 // 配对码映射：{ pairCode: { deviceId, expireAt } }
 const pairCodes = new Map();
 
@@ -83,7 +213,7 @@ app.use((err, req, res, next) => {
 
 // 健康检查
 app.get('/', (req, res) => {
-  res.json({ status: 'ok', devices: devices.size, message: 'Phone Monitor Server v9 (OTA changelog)', commit: 'v2.9.1' });
+  res.json({ status: 'ok', devices: devices.size, message: 'Phone Monitor Server v9 (activation system)', commit: 'v2.11.0' });
 });
 
 // 查看端网页入口
@@ -97,9 +227,9 @@ app.get('/view', (req, res) => {
  * 返回最新版本号和下载URL
  */
 const LATEST_VERSIONS = {
-  collector: {
-    versionCode: 14, versionName: '2.10.0', apkUrl: '/apk/collector-v15.apk',
-    changelog: '1、摄像头打开失败时自动重试（最多3次，间隔递增）\n2、新增本地循环录像功能（5分钟分段，自动覆盖旧文件）\n3、录像前检查存储空间，预留500MB系统空间\n4、通知栏实时显示摄像头状态和上传帧计数'
+    collector: {
+    versionCode: 15, versionName: '2.11.0', apkUrl: '/apk/collector-v16.apk',
+    changelog: '1、新增激活码白名单机制（超级管理员控制设备授权）\n2、首次启动需输入激活码，已激活设备自动连接\n3、管理后台可生成/注销激活码，解绑设备\n4、管理员登录地址: /viewer/admin.html'
   },
   viewer: {
     versionCode: 17, versionName: '2.9.1', apkUrl: '/apk/viewer-v17.apk',
@@ -132,9 +262,39 @@ app.get('/api/latest-version', (req, res) => {
  * Body: { deviceId, passwordHash }
  */
 app.post('/api/register', (req, res) => {
-  const { deviceId, passwordHash } = req.body;
+  const { deviceId, passwordHash, activationCode } = req.body;
   if (!deviceId || !passwordHash) {
     return res.json({ ok: false, error: '缺少 deviceId 或 passwordHash' });
+  }
+  
+  // ★ 激活码检查
+  if (activationCode) {
+    // 首次激活：验证激活码
+    const info = activationCodes.get(activationCode);
+    if (!info) {
+      return res.json({ ok: false, error: '激活码不存在' });
+    }
+    if (info.expiredAt && Date.now() > info.expiredAt) {
+      return res.json({ ok: false, error: '激活码已过期' });
+    }
+    const boundDevices = [...activatedDevices.entries()].filter(([_, v]) => v.code === activationCode).length;
+    if (boundDevices >= info.maxDevices) {
+      return res.json({ ok: false, error: `激活码已达设备上限（${info.maxDevices}个）` });
+    }
+    activatedDevices.set(deviceId, { code: activationCode, activatedAt: Date.now(), note: '' });
+    console.log(`[注册+激活] 设备 ${deviceId} 使用激活码 ${activationCode} 激活`);
+  } else {
+    // 非首次：检查设备是否已激活
+    if (!activatedDevices.has(deviceId)) {
+      return res.json({ ok: false, error: '设备未激活，请使用有效激活码', needActivation: true });
+    }
+    // 验证激活码是否仍有效
+    const devAct = activatedDevices.get(deviceId);
+    const codeInfo = activationCodes.get(devAct.code);
+    if (!codeInfo || (codeInfo.expiredAt && Date.now() > codeInfo.expiredAt)) {
+      activatedDevices.delete(deviceId);
+      return res.json({ ok: false, error: '激活码已失效，请使用新激活码', needActivation: true });
+    }
   }
   devices.set(deviceId, {
     passwordHash,

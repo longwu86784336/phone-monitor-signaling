@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PhoneMonitor 管理后台</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; }
+.container { max-width: 700px; margin: 0 auto; padding: 20px; }
+h1 { color: #c9ada7; font-size: 20px; margin-bottom: 4px; }
+.subtitle { color: #666688; font-size: 12px; margin-bottom: 20px; }
+.card { background: #2d2d44; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+.card h2 { color: #c9ada7; font-size: 15px; margin-bottom: 12px; }
+.input-group { display: flex; gap: 8px; margin-bottom: 12px; }
+.input-group input, .input-group select { flex: 1; background: #1a1a2e; border: 1px solid #4a4e69; color: #fff; padding: 10px 12px; border-radius: 8px; font-size: 13px; }
+.btn { padding: 10px 16px; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; }
+.btn-primary { background: #4a6cf7; color: #fff; }
+.btn-danger { background: #e24b4a; color: #fff; }
+.btn-small { padding: 6px 12px; font-size: 11px; }
+.code-list { max-height: 500px; overflow-y: auto; }
+.code-item { background: #1a1a2e; border-radius: 8px; padding: 14px; margin-bottom: 10px; }
+.code-text { font-family: 'Courier New', monospace; color: #4a6cf7; font-size: 16px; letter-spacing: 1px; margin-bottom: 6px; }
+.code-info { font-size: 11px; color: #888; }
+.code-info span { margin-right: 12px; }
+.code-actions { margin-top: 8px; display: flex; gap: 6px; }
+.device-row { font-size: 12px; color: #888; padding: 4px 0; padding-left: 12px; border-left: 2px solid #4a4e69; margin-top: 4px; }
+.login-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #1a1a2e; display: flex; align-items: center; justify-content: center; z-index: 100; }
+.login-box { background: #2d2d44; padding: 30px; border-radius: 12px; text-align: center; width: 320px; }
+.login-box input { width: 100%; background: #1a1a2e; border: 1px solid #4a4e69; color: #fff; padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; }
+.status-ok { color: #639922; }
+.status-bad { color: #e24b4a; }
+.empty { text-align: center; color: #666688; padding: 30px; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-box">
+    <h1 style="margin-bottom:8px">管理后台</h1>
+    <p class="subtitle">PhoneMonitor Super Admin</p>
+    <input type="password" id="adminPassword" placeholder="管理密码" autofocus>
+    <button class="btn btn-primary" onclick="login()" style="width:100%">登录</button>
+    <p id="loginError" style="color:#e24b4a;font-size:12px;margin-top:8px"></p>
+  </div>
+</div>
+
+<div class="container" id="mainContent" style="display:none">
+  <h1>PhoneMonitor 管理后台</h1>
+  <p class="subtitle">激活码管理 · 设备管理 · 超级管理员</p>
+
+  <div class="card">
+    <h2>生成新激活码</h2>
+    <div class="input-group">
+      <select id="maxDevices">
+        <option value="1">1个设备</option>
+        <option value="3">3个设备</option>
+        <option value="5">5个设备</option>
+        <option value="10">10个设备</option>
+        <option value="99">不限</option>
+      </select>
+      <input type="text" id="codeNote" placeholder="备注（可选）">
+    </div>
+    <button class="btn btn-primary" onclick="generateCode()">生成激活码</button>
+  </div>
+
+  <div class="card">
+    <h2>激活码列表</h2>
+    <div class="code-list" id="codeList">
+      <div class="empty">加载中...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+let adminToken = '';
+const API = '';
+
+function login() {
+  const pw = document.getElementById('adminPassword').value;
+  fetch(API + '/api/admin/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: pw })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      adminToken = data.token;
+      document.getElementById('loginOverlay').style.display = 'none';
+      document.getElementById('mainContent').style.display = 'block';
+      loadCodes();
+    } else {
+      document.getElementById('loginError').textContent = data.error || '密码错误';
+    }
+  });
+}
+
+function loadCodes() {
+  fetch(API + '/api/admin/codes', {
+    headers: { 'admin-token': adminToken }
+  })
+  .then(r => r.json())
+  .then(data => {
+    const list = document.getElementById('codeList');
+    if (!data.ok || !data.codes || data.codes.length === 0) {
+      list.innerHTML = '<div class="empty">暂无激活码，请先生成一个</div>';
+      return;
+    }
+    list.innerHTML = data.codes.map(c => {
+      const boundCount = c.boundList ? c.boundList.length : 0;
+      const devicesHtml = c.boundList ? c.boundList.map(d => 
+        '<div class="device-row">' +
+        d.deviceId + ' | ' + new Date(d.activatedAt).toLocaleString() +
+        ' <button class="btn btn-danger btn-small" onclick="unbindDevice(\'' + d.deviceId + '\')" style="float:right">解绑</button>' +
+        '</div>'
+      ).join('') : '';
+      return '<div class="code-item">' +
+        '<div class="code-text">' + c.code + '</div>' +
+        '<div class="code-info">' +
+        '<span>设备上限: ' + c.maxDevices + '</span>' +
+        '<span>已绑定: <span class="' + (boundCount >= c.maxDevices ? 'status-bad' : 'status-ok') + '">' + boundCount + '</span></span>' +
+        '<span>创建: ' + new Date(c.createdAt).toLocaleString() + '</span>' +
+        (c.note ? '<span>备注: ' + c.note + '</span>' : '') +
+        '</div>' +
+        devicesHtml +
+        '<div class="code-actions">' +
+        '<button class="btn btn-danger btn-small" onclick="deleteCode(\'' + c.code + '\')">注销此码</button>' +
+        '</div>' +
+        '</div>';
+    }).join('');
+  });
+}
+
+function generateCode() {
+  const maxDevices = parseInt(document.getElementById('maxDevices').value);
+  const note = document.getElementById('codeNote').value;
+  fetch(API + '/api/admin/code', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'admin-token': adminToken },
+    body: JSON.stringify({ maxDevices, note })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      document.getElementById('codeNote').value = '';
+      loadCodes();
+    } else {
+      alert(data.error);
+    }
+  });
+}
+
+function deleteCode(code) {
+  if (!confirm('确定注销激活码 ' + code + ' 吗？使用该码的所有设备都将被解绑。')) return;
+  fetch(API + '/api/admin/code', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', 'admin-token': adminToken },
+    body: JSON.stringify({ code })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) loadCodes();
+    else alert(data.error);
+  });
+}
+
+function unbindDevice(deviceId) {
+  if (!confirm('确定解绑设备 ' + deviceId + ' 吗？')) return;
+  fetch(API + '/api/admin/device', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', 'admin-token': adminToken },
+    body: JSON.stringify({ deviceId })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) loadCodes();
+    else alert(data.error);
+  });
+}
+
+document.getElementById('adminPassword').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') login();
+});
+</script>
+</body>
+</html>

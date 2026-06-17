@@ -40,12 +40,16 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_PASSWORD_PLAIN = "password_plain"   // ★ 明文密码（记住用）
         private const val KEY_AUTO_START = "auto_start"           // ★ 是否自动启动
         private const val KEY_DEVICE_ID = "device_id"
+        private const val KEY_ACTIVATION_CODE = "activation_code" // ★ 激活码
         private const val REQUEST_PERMISSIONS = 100
         private const val REQUEST_OVERLAY = 200
         const val DEFAULT_SERVER = "phone-monitor-server.onrender.com"
     }
 
     private lateinit var prefs: SharedPreferences
+    private lateinit var etActivationCode: EditText  // ★ 激活码输入框
+    private lateinit var tvActivationStatus: TextView // ★ 激活状态
+    private lateinit var llActivation: LinearLayout   // ★ 激活码布局
     private lateinit var etPassword: EditText
     private lateinit var etServer: EditText
     private lateinit var btnStart: Button
@@ -71,6 +75,9 @@ class MainActivity : AppCompatActivity() {
 
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
 
+        etActivationCode = findViewById(R.id.etActivationCode)   // ★ 激活码输入框
+        tvActivationStatus = findViewById(R.id.tvActivationStatus) // ★ 激活状态
+        llActivation = findViewById(R.id.llActivation)           // ★ 激活码布局
         etPassword = findViewById(R.id.etPassword)
         etServer   = findViewById(R.id.etServer)
         btnStart   = findViewById(R.id.btnStart)
@@ -133,13 +140,15 @@ class MainActivity : AppCompatActivity() {
         // 因为 doStartService 只需要 hash，不需要明文
         if (autoStart && savedHash != null) {
             val server = etServer.text.toString().trim()
+            val savedCode = prefs.getString(KEY_ACTIVATION_CODE, "")
             tvStatus.text = "⏳ 自动启动监控中..."
-            doStartService(server, savedHash)
+            doStartServiceWithActivation(server, savedHash, if (savedCode.isNullOrEmpty()) null else savedCode)
         }
 
         btnStart.setOnClickListener {
             val password = etPassword.text.toString().trim()
             val server   = etServer.text.toString().trim()
+            val activationCode = etActivationCode.text.toString().trim().uppercase()
 
             if (password.length < 6) {
                 Toast.makeText(this, "密码至少6位", Toast.LENGTH_SHORT).show()
@@ -153,18 +162,24 @@ class MainActivity : AppCompatActivity() {
 
             when {
                 currentSavedHash == null -> {
-                    // 首次设置密码
+                    // 首次设置密码 — 必须输入激活码
+                    if (activationCode.isEmpty()) {
+                        Toast.makeText(this, "首次使用请输入激活码", Toast.LENGTH_SHORT).show()
+                        return@setOnClickListener
+                    }
                     prefs.edit().putString(KEY_PASSWORD_HASH, hash).apply()
                     passwordHash = hash
-                    // ★ 保存明文密码和自启设置
                     savePasswordSettings(password, hash)
-                    doStartService(server, hash)
+                    // 保存激活码
+                    prefs.edit().putString(KEY_ACTIVATION_CODE, activationCode).apply()
+                    doStartServiceWithActivation(server, hash, activationCode)
                 }
                 hash == currentSavedHash -> {
                     passwordHash = hash
-                    // ★ 保存明文密码和自启设置
                     savePasswordSettings(password, hash)
-                    doStartService(server, hash)
+                    // 用已保存的激活码注册
+                    val savedCode = prefs.getString(KEY_ACTIVATION_CODE, "")
+                    doStartServiceWithActivation(server, hash, if (savedCode.isNullOrEmpty()) null else savedCode)
                 }
                 else -> Toast.makeText(this, "密码错误", Toast.LENGTH_SHORT).show()
             }
@@ -282,6 +297,119 @@ class MainActivity : AppCompatActivity() {
             Log.e(TAG, "启动服务失败", e)
             Toast.makeText(this, "启动失败: ${e.message}", Toast.LENGTH_LONG).show()
         }
+    }
+
+    // ★ 带激活码验证的启动（在后台线程验证，避免阻塞UI）
+    private fun doStartServiceWithActivation(server: String, hash: String, activationCode: String?) {
+        Thread {
+            val protocol = "https"
+            val url = "$protocol://$server"
+            val httpClient = java.net.HttpURLConnection::class.java
+            
+            try {
+                // 检查设备激活状态
+                val checkUrl = java.net.URL("$url/api/check-device?deviceId=$deviceId")
+                val checkConn = checkUrl.openConnection() as java.net.HttpURLConnection
+                checkConn.requestMethod = "GET"
+                checkConn.connectTimeout = 5000
+                checkConn.readTimeout = 5000
+                val checkResp = checkConn.inputStream.bufferedReader().readText()
+                checkConn.disconnect()
+                
+                val checkJson = org.json.JSONObject(checkResp)
+                val isActivated = checkJson.optBoolean("activated", false)
+                
+                if (!isActivated && !activationCode.isNullOrEmpty()) {
+                    // 未激活但有激活码，尝试激活
+                    runOnUiThread {
+                        tvStatus.text = "正在验证激活码..."
+                        llActivation.visibility = android.view.View.VISIBLE
+                    }
+                    
+                    val verifyUrl = java.net.URL("$url/api/verify-code")
+                    val verifyConn = verifyUrl.openConnection() as java.net.HttpURLConnection
+                    verifyConn.requestMethod = "POST"
+                    verifyConn.setRequestProperty("Content-Type", "application/json")
+                    verifyConn.doOutput = true
+                    verifyConn.connectTimeout = 5000
+                    verifyConn.readTimeout = 5000
+                    
+                    val payload = org.json.JSONObject().apply {
+                        put("code", activationCode)
+                        put("deviceId", deviceId)
+                    }
+                    verifyConn.outputStream.write(payload.toString().toByteArray())
+                    val verifyResp = verifyConn.inputStream.bufferedReader().readText()
+                    verifyConn.disconnect()
+                    
+                    val verifyJson = org.json.JSONObject(verifyResp)
+                    if (verifyJson.optBoolean("ok", false)) {
+                        runOnUiThread {
+                            tvActivationStatus.text = "✅"
+                            tvStatus.text = "激活成功，正在启动..."
+                            Toast.makeText(this@MainActivity, "激活成功", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        val err = verifyJson.optString("error", "激活失败")
+                        runOnUiThread {
+                            tvActivationStatus.text = "❌"
+                            tvStatus.text = err
+                            Toast.makeText(this@MainActivity, err, Toast.LENGTH_LONG).show()
+                        }
+                        return@Thread
+                    }
+                } else if (!isActivated) {
+                    runOnUiThread {
+                        tvStatus.text = "设备未激活，请输入激活码"
+                        tvActivationStatus.text = "❌"
+                        Toast.makeText(this@MainActivity, "设备未激活，请获取激活码", Toast.LENGTH_LONG).show()
+                    }
+                    return@Thread
+                }
+                
+                // 激活检查通过，注册设备
+                runOnUiThread {
+                    tvStatus.text = "激活验证通过，正在连接..."
+                }
+                
+                val registerUrl = java.net.URL("$url/api/register")
+                val registerConn = registerUrl.openConnection() as java.net.HttpURLConnection
+                registerConn.requestMethod = "POST"
+                registerConn.setRequestProperty("Content-Type", "application/json")
+                registerConn.doOutput = true
+                registerConn.connectTimeout = 5000
+                registerConn.readTimeout = 5000
+                
+                val regPayload = org.json.JSONObject().apply {
+                    put("deviceId", deviceId)
+                    put("passwordHash", hash)
+                    if (activationCode != null) put("activationCode", activationCode)
+                }
+                registerConn.outputStream.write(regPayload.toString().toByteArray())
+                val regResp = registerConn.inputStream.bufferedReader().readText()
+                registerConn.disconnect()
+                
+                val regJson = org.json.JSONObject(regResp)
+                if (regJson.optBoolean("ok", false) || regJson.optString("error", "").contains("激活")) {
+                    // 注册成功（或已经被激活错误拦截，那是服务端的事）
+                    runOnUiThread {
+                        doStartService(server, hash)
+                    }
+                } else {
+                    val err = regJson.optString("error", "注册失败")
+                    runOnUiThread {
+                        tvStatus.text = err
+                        Toast.makeText(this@MainActivity, err, Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "激活验证网络错误", e)
+                runOnUiThread {
+                    tvStatus.text = "网络错误: ${e.message}"
+                    Toast.makeText(this@MainActivity, "网络连接失败，请检查服务器地址", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
     }
 
     private fun stopMonitor() {

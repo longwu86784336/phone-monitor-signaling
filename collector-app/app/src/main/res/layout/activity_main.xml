@@ -22,6 +22,45 @@
             android:layout_marginTop="24dp"
             android:layout_marginBottom="8dp" />
 
+        <!-- ★ 激活码 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="激活码"
+            android:textColor="#c9ada7"
+            android:textSize="14sp"
+            android:layout_marginBottom="4dp" />
+
+        <LinearLayout
+            android:id="@+id/llActivation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="12dp">
+
+            <EditText
+                android:id="@+id/etActivationCode"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:background="#2d2d44"
+                android:textColor="#ffffff"
+                android:textColorHint="#666688"
+                android:hint="请输入激活码（首次使用）"
+                android:padding="12dp"
+                android:inputType="text"
+                android:maxLength="15" />
+
+            <TextView
+                android:id="@+id/tvActivationStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#c9ada7"
+                android:textSize="12sp"
+                android:paddingStart="8dp" />
+        </LinearLayout>
+
         <TextView
             android:id="@+id/tvDeviceId"
             android:layout_width="wrap_content"

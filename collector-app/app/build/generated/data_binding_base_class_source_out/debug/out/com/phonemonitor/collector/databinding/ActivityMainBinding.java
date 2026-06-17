@@ -40,6 +40,9 @@ public final class ActivityMainBinding implements ViewBinding {
   public final CheckBox cbRemember;
 
   @NonNull
+  public final EditText etActivationCode;
+
+  @NonNull
   public final EditText etPassword;
 
   @NonNull
@@ -49,7 +52,13 @@ public final class ActivityMainBinding implements ViewBinding {
   public final ImageView ivQrCode;
 
   @NonNull
+  public final LinearLayout llActivation;
+
+  @NonNull
   public final LinearLayout llSpecialModes;
+
+  @NonNull
+  public final TextView tvActivationStatus;
 
   @NonNull
   public final TextView tvDeviceId;
@@ -62,19 +71,24 @@ public final class ActivityMainBinding implements ViewBinding {
 
   private ActivityMainBinding(@NonNull ScrollView rootView, @NonNull Button btnInfrared,
       @NonNull Button btnNightVision, @NonNull Button btnStart, @NonNull Button btnStop,
-      @NonNull CheckBox cbRemember, @NonNull EditText etPassword, @NonNull EditText etServer,
-      @NonNull ImageView ivQrCode, @NonNull LinearLayout llSpecialModes,
-      @NonNull TextView tvDeviceId, @NonNull TextView tvStatus, @NonNull TextView tvVersion) {
+      @NonNull CheckBox cbRemember, @NonNull EditText etActivationCode,
+      @NonNull EditText etPassword, @NonNull EditText etServer, @NonNull ImageView ivQrCode,
+      @NonNull LinearLayout llActivation, @NonNull LinearLayout llSpecialModes,
+      @NonNull TextView tvActivationStatus, @NonNull TextView tvDeviceId,
+      @NonNull TextView tvStatus, @NonNull TextView tvVersion) {
     this.rootView = rootView;
     this.btnInfrared = btnInfrared;
     this.btnNightVision = btnNightVision;
     this.btnStart = btnStart;
     this.btnStop = btnStop;
     this.cbRemember = cbRemember;
+    this.etActivationCode = etActivationCode;
     this.etPassword = etPassword;
     this.etServer = etServer;
     this.ivQrCode = ivQrCode;
+    this.llActivation = llActivation;
     this.llSpecialModes = llSpecialModes;
+    this.tvActivationStatus = tvActivationStatus;
     this.tvDeviceId = tvDeviceId;
     this.tvStatus = tvStatus;
     this.tvVersion = tvVersion;
@@ -137,6 +151,12 @@ public final class ActivityMainBinding implements ViewBinding {
         break missingId;
       }
 
+      id = R.id.etActivationCode;
+      EditText etActivationCode = ViewBindings.findChildViewById(rootView, id);
+      if (etActivationCode == null) {
+        break missingId;
+      }
+
       id = R.id.etPassword;
       EditText etPassword = ViewBindings.findChildViewById(rootView, id);
       if (etPassword == null) {
@@ -155,9 +175,21 @@ public final class ActivityMainBinding implements ViewBinding {
         break missingId;
       }
 
+      id = R.id.llActivation;
+      LinearLayout llActivation = ViewBindings.findChildViewById(rootView, id);
+      if (llActivation == null) {
+        break missingId;
+      }
+
       id = R.id.llSpecialModes;
       LinearLayout llSpecialModes = ViewBindings.findChildViewById(rootView, id);
       if (llSpecialModes == null) {
+        break missingId;
+      }
+
+      id = R.id.tvActivationStatus;
+      TextView tvActivationStatus = ViewBindings.findChildViewById(rootView, id);
+      if (tvActivationStatus == null) {
         break missingId;
       }
 
@@ -180,8 +212,8 @@ public final class ActivityMainBinding implements ViewBinding {
       }
 
       return new ActivityMainBinding((ScrollView) rootView, btnInfrared, btnNightVision, btnStart,
-          btnStop, cbRemember, etPassword, etServer, ivQrCode, llSpecialModes, tvDeviceId, tvStatus,
-          tvVersion);
+          btnStop, cbRemember, etActivationCode, etPassword, etServer, ivQrCode, llActivation,
+          llSpecialModes, tvActivationStatus, tvDeviceId, tvStatus, tvVersion);
     }
     String missingId = rootView.getResources().getResourceName(id);
     throw new NullPointerException("Missing required view with ID: ".concat(missingId));
