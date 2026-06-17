@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: phone-monitor-server
+    env: node
+    plan: free
+    rootDir: signaling-server-deploy
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
