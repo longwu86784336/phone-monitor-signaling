@@ -10,6 +10,8 @@ const path = require('path');
 const multer = require('multer');
 
 const app = express();
+app.use(express.json()); // 解析 JSON body（必须在使用 POST 路由之前）
+app.use(express.urlencoded({ extended: true })); // 解析表单 body
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
