@@ -3,9 +3,10 @@ services:
     name: phone-monitor-server
     env: node
     plan: free
-    rootDir: signaling-server-deploy
+    region: oregon
     buildCommand: npm install
-    startCommand: node server.js
+    startCommand: npm start
+    healthCheckPath: /
     envVars:
       - key: NODE_ENV
         value: production
